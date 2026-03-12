@@ -12,6 +12,9 @@ def _compute_activity_threshold(smoothed_scores: list[float], sensitivity: float
     high = float(np.percentile(arr, 80))
     sensitivity = float(np.clip(sensitivity, 0.0, 1.0))
 
+    if abs(high - low) < 1e-6:
+        return high + 1e-4
+
     # Mayor sensibilidad => umbral más bajo => más segmentos detectados como GAME.
     return low + (high - low) * (1.0 - sensitivity)
 

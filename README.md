@@ -1,6 +1,6 @@
 # Tennis Highlight Generator (MVP)
 
-Aplicación local en Streamlit para recortar videos de tenis amateur, eliminando tiempos muertos y conservando segmentos de juego real usando heurísticas simples de movimiento (sin modelos entrenados).
+Aplicación local en Streamlit para recortar videos de tenis amateur, eliminando tiempos muertos y conservando segmentos de juego real con una heurística simple basada en detección de jugadores + optical flow local.
 
 ## Stack
 
@@ -8,6 +8,7 @@ Aplicación local en Streamlit para recortar videos de tenis amateur, eliminando
 - Streamlit
 - OpenCV
 - NumPy
+- Ultralytics YOLO
 - FFmpeg (CLI en `PATH`)
 - `pathlib`, `dataclasses`, `typing`
 
@@ -24,6 +25,7 @@ Aplicación local en Streamlit para recortar videos de tenis amateur, eliminando
     ├── models.py
     ├── video_io.py
     ├── motion_features.py
+    ├── debug_export.py
     ├── segment_detection.py
     ├── postprocess.py
     ├── export.py
@@ -34,15 +36,18 @@ Aplicación local en Streamlit para recortar videos de tenis amateur, eliminando
 ## Cómo funciona
 
 1. Se muestrea el video a una tasa configurable (`sample_fps`).
-2. Se calcula actividad por diferencia absoluta entre frames consecutivos en escala de grises.
-3. Se suaviza la señal temporal.
-4. Se aplica umbral dinámico (percentiles + sensibilidad).
-5. Se generan segmentos GAME iniciales.
-6. Postproceso temporal:
+2. Se detectan personas con YOLO y se filtra solo clase `person`.
+3. En cada frame se eligen los 2 jugadores principales por área de bounding box.
+4. Se calcula optical flow Farneback entre frames consecutivos.
+5. Se calcula score local dentro de cada bounding box y se combina en un score global.
+6. Se suaviza la señal temporal.
+7. Se aplica umbral dinámico (percentiles + sensibilidad).
+8. Se generan segmentos GAME iniciales.
+9. Postproceso temporal:
    - merge de segmentos cercanos
    - eliminación de segmentos muy cortos
    - padding antes/después
-7. Se exporta video final con FFmpeg concatenando solo segmentos GAME.
+10. Se exporta video final con FFmpeg concatenando solo segmentos GAME.
 
 ## Instalación
 
@@ -85,17 +90,30 @@ Abrí la URL local que muestra Streamlit (normalmente `http://localhost:8501`).
   - Padding antes/después
   - Muestreo de frames
   - Suavizado temporal
-  - Modo debug (incluye video de máscara de movimiento por umbral)
+  - Modelo YOLO + confianza mínima de persona
+  - Métrica local de flow (`p90`, `mean`, `fast_ratio`)
+  - Umbral de flow rápido y modo de combinación global (`max` o `mean`)
+  - Modo debug (video con bounding boxes y scores de actividad)
 - Procesar video
 - Ver resumen de segmentos detectados
-- En debug: ver y descargar un video donde se iluminan solo los píxeles con diferencia que supera el umbral
+- En debug: ver y descargar un video con cajas de jugadores y score por frame
+- Ver profiling por etapa (tiempos de pipeline) y métricas del extractor de movimiento
+- Descargar `pipeline.log` y `profiling.json` de cada corrida
 - Visualizar export final
 - Descargar highlights
 
+## Profiling y logs
+
+- Cada ejecución crea un `workspace` temporal.
+- En ese workspace se guardan:
+  - `pipeline.log`: eventos y tiempos de cada etapa.
+  - `profiling.json`: resumen de tiempos por etapa y métricas de extracción (`YOLO`, `flow`, throughput).
+- La UI muestra una tabla de tiempos por etapa y botones para descargar ambos archivos.
+
 ## Notas y límites del MVP
 
-- No hay detección de pelota ni modelos ML.
-- Cambios bruscos de cámara/fondo pueden afectar la precisión.
+- No hay detección de pelota ni tracking persistente de jugadores.
+- Cambios bruscos de cámara y detecciones inestables pueden afectar la precisión.
 - Parámetros pueden necesitar ajuste según cada video.
 - Se prioriza mantenibilidad y rapidez de iteración.
 

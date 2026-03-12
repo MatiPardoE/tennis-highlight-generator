@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -20,6 +20,9 @@ class MotionSeries:
     scores: list[float]
     smoothed_scores: list[float]
     sample_fps: float
+    player_boxes: list[tuple[tuple[int, int, int, int], ...]] = field(default_factory=list)
+    player_scores: list[tuple[float, ...]] = field(default_factory=list)
+    profiling: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
