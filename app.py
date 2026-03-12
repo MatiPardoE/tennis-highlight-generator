@@ -150,6 +150,7 @@ def main() -> None:
         "Subí un video de tenis",
         type=["mp4", "mov", "avi", "mkv", "m4v"],
         accept_multiple_files=False,
+        max_upload_size=1000,  # 1000 MB
     )
 
     if uploaded_file is None:
