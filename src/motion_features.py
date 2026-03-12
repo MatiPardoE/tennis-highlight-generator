@@ -13,7 +13,7 @@ class MotionExtractionError(RuntimeError):
     pass
 
 
-def _resize_preserving_aspect(frame: np.ndarray, target_width: int) -> np.ndarray:
+def resize_preserving_aspect(frame: np.ndarray, target_width: int) -> np.ndarray:
     h, w = frame.shape[:2]
     if w <= target_width:
         return frame
@@ -22,8 +22,8 @@ def _resize_preserving_aspect(frame: np.ndarray, target_width: int) -> np.ndarra
     return cv2.resize(frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
 
 
-def _to_gray(frame: np.ndarray, resize_width: int) -> np.ndarray:
-    resized = _resize_preserving_aspect(frame, resize_width)
+def preprocess_frame_for_motion(frame: np.ndarray, resize_width: int) -> np.ndarray:
+    resized = resize_preserving_aspect(frame, resize_width)
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     return cv2.GaussianBlur(gray, (5, 5), 0)
 
@@ -45,7 +45,7 @@ def extract_motion_series(video_path: Path, metadata: VideoMetadata, cfg: Proces
     if not cap.isOpened():
         raise MotionExtractionError(f"No se pudo abrir el video: {video_path}")
 
-    sample_step_frames = max(1, round(metadata.fps / max(cfg.sample_fps, 0.1)))
+    sample_step_frames = sample_step_from_fps(metadata.fps, cfg.sample_fps)
     effective_sample_fps = metadata.fps / sample_step_frames
 
     frame_index = 0
@@ -62,7 +62,7 @@ def extract_motion_series(video_path: Path, metadata: VideoMetadata, cfg: Proces
             frame_index += 1
             continue
 
-        gray = _to_gray(frame, cfg.resize_width)
+        gray = preprocess_frame_for_motion(frame, cfg.resize_width)
         if previous_gray is not None:
             diff = cv2.absdiff(gray, previous_gray)
             score = float(np.mean(diff) / 255.0)
@@ -86,3 +86,7 @@ def extract_motion_series(video_path: Path, metadata: VideoMetadata, cfg: Proces
         smoothed_scores=smoothed_scores,
         sample_fps=effective_sample_fps,
     )
+
+
+def sample_step_from_fps(video_fps: float, sample_fps: float) -> int:
+    return max(1, round(video_fps / max(sample_fps, 0.1)))

@@ -5,6 +5,7 @@ from pathlib import Path
 import streamlit as st
 
 from src.config import ExportConfig, ProcessingConfig
+from src.debug_export import DebugExportError, export_threshold_motion_video, pixel_diff_threshold_from_activity
 from src.export import ExportError, export_highlight_video
 from src.motion_features import MotionExtractionError, extract_motion_series
 from src.postprocess import build_non_game_segments, postprocess_game_segments
@@ -31,6 +32,11 @@ def run_pipeline(uploaded_file, cfg: ProcessingConfig, export_cfg: ExportConfig)
         output_path = workspace / f"{sanitize_stem(uploaded_file.name)}_highlights.mp4"
         export_highlight_video(input_path, output_path, final_segments, export_cfg)
 
+    debug_video_path: Path | None = None
+    if cfg.debug_mode:
+        debug_video_path = workspace / f"{sanitize_stem(uploaded_file.name)}_debug_motion_mask.mp4"
+        export_threshold_motion_video(input_path, debug_video_path, metadata, motion, cfg, threshold)
+
     return {
         "workspace": workspace,
         "input_path": input_path,
@@ -41,6 +47,7 @@ def run_pipeline(uploaded_file, cfg: ProcessingConfig, export_cfg: ExportConfig)
         "final_segments": final_segments,
         "non_game_segments": non_game_segments,
         "output_path": output_path,
+        "debug_video_path": debug_video_path,
     }
 
 
@@ -88,7 +95,7 @@ def main() -> None:
     try:
         with st.spinner("Procesando video..."):
             result = run_pipeline(uploaded_file, cfg, export_cfg)
-    except (VideoIOError, MotionExtractionError, ExportError) as exc:
+    except (VideoIOError, MotionExtractionError, ExportError, DebugExportError) as exc:
         st.error(str(exc))
         return
     except Exception as exc:  # noqa: BLE001
@@ -100,6 +107,7 @@ def main() -> None:
     final_segments = result["final_segments"]
     non_game_segments = result["non_game_segments"]
     output_path: Path | None = result["output_path"]
+    debug_video_path: Path | None = result["debug_video_path"]
 
     kept_sec = total_duration(final_segments)
     removed_ratio = 0.0
@@ -125,8 +133,10 @@ def main() -> None:
     if cfg.debug_mode:
         motion = result["motion"]
         threshold = result["threshold"]
+        pixel_threshold = pixel_diff_threshold_from_activity(threshold)
         st.subheader("Debug")
         st.write(f"Umbral de actividad: {threshold:.4f}")
+        st.write(f"Umbral de diferencia por píxel: {pixel_threshold}/255")
         st.line_chart(
             {
                 "score": motion.scores,
@@ -134,6 +144,15 @@ def main() -> None:
                 "umbral": [threshold] * len(motion.scores),
             }
         )
+        if debug_video_path is not None:
+            st.write("Máscara de movimiento (solo píxeles que superan el umbral)")
+            st.video(str(debug_video_path))
+            st.download_button(
+                label="Descargar video debug de movimiento",
+                data=debug_video_path.read_bytes(),
+                file_name=debug_video_path.name,
+                mime="video/mp4",
+            )
 
     if output_path is None:
         return

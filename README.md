@@ -85,9 +85,10 @@ Abrí la URL local que muestra Streamlit (normalmente `http://localhost:8501`).
   - Padding antes/después
   - Muestreo de frames
   - Suavizado temporal
-  - Modo debug
+  - Modo debug (incluye video de máscara de movimiento por umbral)
 - Procesar video
 - Ver resumen de segmentos detectados
+- En debug: ver y descargar un video donde se iluminan solo los píxeles con diferencia que supera el umbral
 - Visualizar export final
 - Descargar highlights
 
