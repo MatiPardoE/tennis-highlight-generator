@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from typing import BinaryIO
 
 import cv2
 
@@ -13,11 +14,14 @@ class VideoIOError(RuntimeError):
     pass
 
 
-def save_uploaded_video(data: bytes, original_name: str, workspace: Path) -> Path:
+def save_uploaded_video(file_obj: BinaryIO, original_name: str, workspace: Path) -> Path:
     workspace.mkdir(parents=True, exist_ok=True)
     ext = Path(original_name).suffix.lower() or ".mp4"
     input_path = workspace / f"input{ext}"
-    input_path.write_bytes(data)
+    file_obj.seek(0)
+    with input_path.open("wb") as dst:
+        shutil.copyfileobj(file_obj, dst, length=1024 * 1024)
+    file_obj.seek(0)
     return input_path
 
 

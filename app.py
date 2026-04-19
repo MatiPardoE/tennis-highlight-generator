@@ -24,15 +24,17 @@ def run_pipeline(uploaded_file, cfg: ProcessingConfig, export_cfg: ExportConfig)
     profiler = StageProfiler()
 
     try:
-        uploaded_bytes = uploaded_file.getvalue()
+        uploaded_file.seek(0, 2)
+        uploaded_size = uploaded_file.tell()
+        uploaded_file.seek(0)
         logger.info(
             "Inicio pipeline. file='%s' size_mb=%.2f",
             uploaded_file.name,
-            len(uploaded_bytes) / (1024.0 * 1024.0),
+            uploaded_size / (1024.0 * 1024.0),
         )
 
         with profiler.track("save_upload"):
-            input_path = save_uploaded_video(uploaded_bytes, uploaded_file.name, workspace)
+            input_path = save_uploaded_video(uploaded_file, uploaded_file.name, workspace)
 
         with profiler.track("ensure_ffmpeg"):
             ensure_ffmpeg_available()
@@ -150,7 +152,7 @@ def main() -> None:
         "Subí un video de tenis",
         type=["mp4", "mov", "avi", "mkv", "m4v"],
         accept_multiple_files=False,
-        max_upload_size=1000,  # 1000 MB
+        max_upload_size=4096,
     )
 
     if uploaded_file is None:
