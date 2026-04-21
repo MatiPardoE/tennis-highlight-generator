@@ -3,23 +3,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import cv2
-import numpy as np
 
 from src.config import ProcessingConfig
-from src.motion_features import preprocess_frame_for_motion, sample_step_from_fps
 from src.models import MotionSeries, VideoMetadata
+from src.motion_features import resize_preserving_aspect, sample_step_from_fps
 
 
 class DebugExportError(RuntimeError):
     pass
 
 
-def pixel_diff_threshold_from_activity(activity_threshold: float) -> int:
-    clipped = float(np.clip(activity_threshold, 0.0, 1.0))
-    return int(np.clip(round(clipped * 255.0), 1, 255))
-
-
-def export_threshold_motion_video(
+def export_player_activity_debug_video(
     input_path: Path,
     output_path: Path,
     metadata: VideoMetadata,
@@ -33,11 +27,8 @@ def export_threshold_motion_video(
 
     sample_step_frames = sample_step_from_fps(metadata.fps, cfg.sample_fps)
     output_fps = metadata.fps / sample_step_frames
-    pixel_threshold = pixel_diff_threshold_from_activity(activity_threshold)
-
     frame_index = 0
-    sample_index = 0
-    previous_gray: np.ndarray | None = None
+    sampled_frame_index = 0
     writer: cv2.VideoWriter | None = None
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -51,33 +42,75 @@ def export_threshold_motion_video(
             frame_index += 1
             continue
 
-        gray = preprocess_frame_for_motion(frame, cfg.resize_width)
-        if previous_gray is not None:
-            diff = cv2.absdiff(gray, previous_gray)
-            _, motion_mask = cv2.threshold(diff, pixel_threshold, 255, cv2.THRESH_BINARY)
+        resized = resize_preserving_aspect(frame, cfg.resize_width)
+        if sampled_frame_index == 0:
+            sampled_frame_index += 1
+            frame_index += 1
+            continue
 
-            score_active = sample_index < len(motion.smoothed_scores) and motion.smoothed_scores[sample_index] >= activity_threshold
-            if not score_active:
-                motion_mask = np.zeros_like(motion_mask)
+        score_index = sampled_frame_index - 1
+        if score_index >= len(motion.scores):
+            break
 
-            debug_frame = np.zeros((motion_mask.shape[0], motion_mask.shape[1], 3), dtype=np.uint8)
-            debug_frame[:, :, 1] = motion_mask
+        debug_frame = resized.copy()
+        player_boxes = motion.player_boxes[score_index] if score_index < len(motion.player_boxes) else tuple()
+        player_scores = motion.player_scores[score_index] if score_index < len(motion.player_scores) else tuple()
 
-            if writer is None:
-                writer = cv2.VideoWriter(
-                    str(output_path),
-                    cv2.VideoWriter_fourcc(*"mp4v"),
-                    output_fps,
-                    (debug_frame.shape[1], debug_frame.shape[0]),
-                )
-                if not writer.isOpened():
-                    cap.release()
-                    raise DebugExportError(f"No se pudo crear el video debug: {output_path}")
+        for player_idx, (x1, y1, x2, y2) in enumerate(player_boxes):
+            cv2.rectangle(debug_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            score = player_scores[player_idx] if player_idx < len(player_scores) else 0.0
+            label = f"P{player_idx + 1}: {score:.3f}"
+            cv2.putText(
+                debug_frame,
+                label,
+                (x1, max(22, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 255, 0),
+                2,
+                cv2.LINE_AA,
+            )
 
-            writer.write(debug_frame)
-            sample_index += 1
+        raw_score = motion.scores[score_index]
+        smooth_score = motion.smoothed_scores[score_index]
+        is_active = smooth_score >= activity_threshold
+        status = "GAME" if is_active else "PAUSA"
+        text_color = (0, 255, 0) if is_active else (0, 165, 255)
 
-        previous_gray = gray
+        cv2.putText(
+            debug_frame,
+            f"Score: {raw_score:.3f}  Smooth: {smooth_score:.3f}  Thr: {activity_threshold:.3f}",
+            (12, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            debug_frame,
+            f"Estado: {status}",
+            (12, 58),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            text_color,
+            2,
+            cv2.LINE_AA,
+        )
+
+        if writer is None:
+            writer = cv2.VideoWriter(
+                str(output_path),
+                cv2.VideoWriter_fourcc(*"mp4v"),
+                output_fps,
+                (debug_frame.shape[1], debug_frame.shape[0]),
+            )
+            if not writer.isOpened():
+                cap.release()
+                raise DebugExportError(f"No se pudo crear el video debug: {output_path}")
+
+        writer.write(debug_frame)
+        sampled_frame_index += 1
         frame_index += 1
 
     cap.release()
